@@ -1,0 +1,393 @@
+---
+title: "Final Project"
+subtitle: 'By: Tej Gaonkar, Arnav Cherukuthota, and Ayush Majumdar'
+date: "2023-03-09"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Division of work among questions:
+
+QUESTION 1: Arnav, Ayush, and Tej.
+
+QUESTION 2: Tej
+
+QUESTION 3: Arnav
+
+QUESTION 4: Tej
+
+QUESTION 5: Ayush
+
+```{r}
+set.seed(920615973)#Arnav
+set.seed(920480946)#Ayush
+set.seed(920711851)#Tej
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+
+# 1
+
+## a
+
+```{r}
+#saveRDS(cases, file = "cases.RDS")
+#saveRDS(parents, file = "parents.RDS")
+#saveRDS(payments, file = "payments.RDS")
+#saveRDS(children, file = "children.RDS")
+cases <- readRDS("cases.RDS")
+parents <- readRDS("parents.RDS")
+payments <- readRDS("payments.RDS")
+children <- readRDS("children.RDS")
+dim(cases)
+dim(parents)
+dim(payments)
+dim(children)
+```
+## b
+```{r}
+children1 <- children %>%
+  group_by(CASE_NUM) %>%
+  summarise(name = n())
+mean <- mean(children1$name)
+mean
+ggplot(children1, aes(x = name)) +
+  geom_histogram(bins = 15) +
+  geom_vline(xintercept = mean) +
+  annotate("text", x = 5, y = 25000, label = mean)
+```
+## c
+
+```{r}
+children2 <- children %>%
+  group_by(ID) %>%
+  summarize(count = n())
+max(children2$count)
+
+```
+The count column counts the number of times each ID appears and therefore shows how many times cases have appeared for them. Therefore the max of these counts, which is associated to one of the children's ID's is the maximum number of cases associated to one child.
+
+## d
+
+```{r}
+payments %>%
+  count(AP_ID) %>%
+  arrange(AP_ID) %>%
+  head()
+parents_payments <- payments %>%
+  left_join(parents, by = "AP_ID") %>%
+  count(AP_ID) %>%
+  arrange(AP_ID)
+head(parents_payments)
+```
+Because the number of rows is the same in the joined data table as the payments data table, we know that all the parents in the parents data set are in the payments data set.
+
+# 2
+
+```{r}
+pool_categories <- function(name,threshold){
+  freq <- table(name)
+  values <- freq[freq < threshold]
+  if("Other" %in% levels(name)){
+    stop("Other level already exists")
+  }
+  else{
+    name <- ifelse(name %in% names(values),"Other", as.character(name))
+    name <- factor(table(name))
+  }
+  return(name)
+}
+pool_categories(payments$PYMNT_SRC, 150)
+```
+# 3.
+
+## a.
+
+```{r}
+payments <- payments %>% mutate("DATE" = mdy_hms(COLLECTION_DT)) %>% arrange(DATE)
+head(payments)
+#i. 
+c(payments$DATE[1], payments$DATE[nrow(payments)])
+#ii.
+100 * nrow(payments %>% filter(DATE < ymd(20150501))) / nrow(payments)
+```
+
+The range of dates of all payments is 2002-07-06 to 2016-11-04. The percentage of total payments made before May 1st, 2015 is 0.382.
+
+## b.
+
+```{r}
+payments2 <- payments %>% filter(DATE > ymd(20150501)) %>% group_by(DATE) %>% summarize("payment_count" = n())
+ggplot(data = payments2, mapping = aes(x = DATE, y = payment_count)) +
+  geom_line()
+```
+
+## c.
+
+The bimodal shape of the distribution of payments made on each day over this time period is explained by the idea that payments are made either at the start of the month, or at the very end of the month. This is why we see frequent variation, as well as large peaks in the sequence plot of the data. 
+
+
+## d.
+
+```{r}
+payments4 <- payments %>% filter(DATE > ymd(20161101)) %>% group_by(PYMNT_AMT)
+payments5 <- data.frame(table(payments4$PYMNT_AMT))
+colnames(payments5) <- c('date', 'count')
+ggplot(data = payments5, mapping = aes(x = date, y = count)) + 
+  geom_point()
+```
+
+The shape of the distribution seems to be of a negative correlation - as the days progress, the overall amount being paid in the payments seem to be decreasing. This might be because of lower required payment charges from the government as each case comes to a close.
+
+# 4 
+
+## a
+
+Assumptions:
+Linearity: The data is linear.
+Independence of Errors: The residual plot shows that there is no clear pattern in the residuals.
+Normality of Errors: The Normal Q-Q plot shows that the errors are normally distributed
+Equal Variance: The variance of the residuals is consistent across the fitted values.
+
+H01: There is no linear relationship between number of children and total amount of payments by the parent.
+HA1: There is some relationship between the number of children and total amount of payments made by the parent.
+H02: There is no linear relationship between number of children and number of payments by the parent.
+HA1: There is some relationship between the number of children and number of payments made by the parent.
+
+```{r}
+payment_sum <- payments %>%
+  group_by(AP_ID) %>%
+  summarize("payment_total" = sum(PYMNT_AMT))
+payment_count <- payments %>%
+  group_by(AP_ID) %>%
+  summarize("payment_number" = n())
+payments_distinct <- payments %>%
+  distinct(CASE_NUM, AP_ID)
+number_children <- payments_distinct %>%
+  inner_join(children, by = "CASE_NUM") %>%
+  group_by(CASE_NUM, AP_ID) %>%
+  summarize("children_number" = n()) %>%
+  arrange(children_number)
+all_set <- number_children %>%
+  inner_join(payment_count, by = "AP_ID") %>%
+  inner_join(payment_sum, by = "AP_ID") %>%
+  replace(is.na(.), 0)
+ggplot(all_set, aes(x = children_number, y = payment_number)) + 
+  geom_point()
+ggplot(all_set, aes(x = children_number, y = payment_total)) + 
+  geom_point() 
+summary(lm(payment_number~children_number, data = all_set))
+par(mfrow = c(2,2))
+plot(lm(payment_number~children_number, data = all_set))
+summary(lm(payment_total~children_number, data = all_set))
+par(mfrow = c(2,2))
+plot(lm(payment_number~children_number, data = all_set))
+cor.test(all_set$children_number, all_set$payment_number)
+cor.test(all_set$children_number, all_set$payment_total)
+```
+The p-values from the correlation test shows us that we cannot reject the hypothesis that the correlation is 0 for both the number of payments and the total amount paid. This means that parents that are responsible for more children don't pay more money or pay more frequently.
+
+## b
+
+Assumptions:
+Linearity: The data is linear.
+Independence of Errors: The residual plot shows that there is no clear pattern in the residuals.
+Normality of Errors: The Normal Q-Q plot shows that the errors are normally distributed
+Equal Variance: The variance of the residuals is consistent across the fitted values.
+
+H0: There is no linear relationship between the mean age of children and the total amount that their parent paid.
+HA: There is a linear relationship between the mean age of children and the total amount that their parent paid.
+
+```{r}
+children_date <- children %>%
+  mutate("DOB" = mdy_hms(DATE_OF_BIRTH_DT))
+date <- mdy_hms("01/01/2017 0:00:00")
+children_date <-children_date %>%
+  mutate("age" = as.numeric(date - DOB)) %>%
+  left_join(payments, by = "CASE_NUM") %>%
+  group_by(AP_ID) %>%
+  summarize("mean_age" = mean(age))
+sum <- payments %>%
+  left_join(children, by = "CASE_NUM") %>%
+  group_by(AP_ID) %>%
+  summarize("total_payments" = sum(PYMNT_AMT))
+sum
+mean_payments <- children_date %>%
+  inner_join(sum, by = "AP_ID") %>%
+  replace(is.na(.), 0)
+summary(lm(total_payments~mean_age, data = mean_payments))
+par(mfrow = c(2,2))
+plot(lm(total_payments~mean_age, data = mean_payments))
+ggplot(mean_payments, aes(x = mean_age, y = total_payments))+
+  geom_point()
+cor.test(mean_payments$mean_age, mean_payments$total_payments)
+
+
+```
+The correlation test shows us that we can reject the null hypothesis that there is no linear correlation between mean age and total payments. However, even though there is a correlation, the correlation is very weak and negative.
+
+## c
+
+Assumptions:
+Samples are independent.
+Normality of the response variable: The log of the response variable is normally distributed.
+Equal Variances The quotient of the standard deviations is less than 2 which shows that the population variances are approximately equal.
+
+H0: Zip code of the absent parent does not anticipate the total payment amount.
+HA: Zip code of the absent parent does anticipate the total payment amount.
+
+
+```{r}
+zip <- payment_sum %>%
+  left_join(parents, by = "AP_ID") %>%
+  select(AP_ID,payment_total, AP_ADDR_ZIP)
+ggplot(zip, aes(x = log(payment_total))) + 
+  geom_histogram()
+zip.sd <- zip %>%
+  group_by(AP_ADDR_ZIP) %>%
+  summarize("sd" = sd(payment_total))
+max(zip.sd$sd)/ min(zip.sd$sd)
+one.way <- aov(log(payment_total) ~ AP_ADDR_ZIP, data = zip)
+summary(one.way)
+par(mfrow = c(2,2))
+plot(one.way)
+```
+Since the p-value is less than 2e-16, we can reject the null hypothesis that zip code does not anticipate the total payments.
+
+## d
+
+Assumptions:
+Linearity: The data is linear.
+Independence of Errors: The residual plot shows that there is no clear pattern in the residuals.
+Normality of Errors: The Normal Q-Q plot shows that the errors are normally distributed
+Equal Variance: The variance of the residuals is consistent across the fitted values.
+
+H0: Number of children and mean age of the children have no linear relationship with the total payment made by parents.
+HA: Number of children and mean age of the children has a relationship with the total payment made by parents.
+
+```{r}
+complete_set <- all_set %>%
+  left_join(mean_payments, by = "AP_ID")
+multiple_model<-lm(payment_total ~ children_number*mean_age, data = complete_set)
+summary(multiple_model)
+par(mfrow = c(2,2))
+plot(multiple_model)
+```
+```{r}
+summary(aov(multiple_model))
+```
+Since p-value for the Global Null Hypothesis is less than 2.2e-16, we can say that there is a linear relationship between mean age or number of children on total payments. In this case, we see that the relationship is between mean age of the children and the total payments made by the parent.
+
+# 5 
+
+## a
+
+Assumptions:
+Linearity: The data is linear.
+Independence of Errors: The residual plot shows that there is no clear pattern in the residuals.
+Normality of Errors: The Normal Q-Q plot shows that the errors are normally distributed
+Equal Variance: The variance of the residuals is consistent across the fitted values.
+
+H0: There is no linear association between the standard deviation of total payments and the mean of total payments.
+HA: There is a linear association between the standard deviation of total payments and the mean of total payments.
+```{r}
+daily_sd <- payments %>%
+  group_by(AP_ID) %>%
+  summarize("sd" = sd(PYMNT_AMT))
+daily_mean <- payments %>%
+  group_by(AP_ID) %>%
+  summarize("mean" = mean(PYMNT_AMT))
+daily_sd_mean <- daily_sd %>%
+  left_join(daily_mean, by = "AP_ID")
+ggplot(daily_sd_mean, aes(x = sd, y = mean)) +
+  geom_point()
+sd_mean_model <- lm(mean~sd, data = daily_sd_mean)
+summary(sd_mean_model)
+par(mfrow = c(2,2))
+plot(sd_mean_model)
+cor.test(daily_sd_mean$sd, daily_sd_mean$mean)
+```
+The p-value of the correlation test is less than our threshold of 0.05. This means that there is a correlation between the SD of payments and the mean of the payments. This correlation is strong and positive.
+
+## b 
+
+```{r}
+paymentsCV <- payments %>% group_by(AP_ID) %>% summarize("CV" = sd(PYMNT_AMT)/mean(PYMNT_AMT))
+paymentsCV <- na.omit(paymentsCV)
+low <- quantile(paymentsCV$CV, (0.25))
+medium <- quantile(paymentsCV$CV, (0.5))
+high <- quantile(paymentsCV$CV, (0.75))
+paymentsCVlow <- paymentsCV %>% filter(CV <= low) %>% arrange(desc(CV)) 
+paymentsCVlowAPID <- paymentsCVlow[1,1]
+
+paymentsCVmedium <- paymentsCV %>% filter(CV <=  medium) %>% arrange(desc(CV)) 
+paymentsCVmediumAPID <- paymentsCVmedium[1,1]
+
+paymentsCVhigh <- paymentsCV %>% filter(CV <= high) %>% arrange(desc(CV)) 
+paymentsCVhighAPID <- paymentsCVhigh[1,1]
+
+paymentsCVlowAPID #parent with low CV has AP_ID: 1775478
+paymentsCVmediumAPID #parent with medium CV has AP_ID: 1757513 
+paymentsCVhighAPID #parent with high CV has AP_ID: 1769077 
+
+lowDf <- payments %>% filter(AP_ID == 1775478) %>% group_by(DATE) 
+ggplot(data = lowDf, mapping = aes(x = DATE, y = PYMNT_AMT)) +
+  geom_line()
+
+mediumDf <- payments %>% filter(AP_ID == 1757513) %>% group_by(DATE) 
+ggplot(data = mediumDf, mapping = aes(x = DATE, y = PYMNT_AMT)) +
+  geom_line()
+
+highDf <- payments %>% filter(AP_ID == 1769077) %>% group_by(DATE) 
+ggplot(data = highDf, mapping = aes(x = DATE, y = PYMNT_AMT)) +
+  geom_line()
+```
+
+## c
+
+Assumptions:
+Linearity: The data is linear.
+Independence of Errors: The residual plot shows that there is no clear pattern in the residuals.
+Normality of Errors: The Normal Q-Q plot shows that the errors are normally distributed
+Equal Variance: The variance of the residuals is consistent across the fitted values.
+
+H0: There is no linear relationship between the CV and the total payments.
+HA: There is a a linear relationship between the CV and the total payments.
+
+```{r}
+payments_CV_total <- paymentsCV %>%
+  left_join(payment_sum, by = "AP_ID")
+ggplot(payments_CV_total, aes(x = payment_total, y = CV))+
+  geom_point()
+CV_model <- lm(CV~payment_total, data = payments_CV_total)
+summary(CV_model)
+par(mfrow = c(2,2))
+plot(CV_model)
+cor.test(payments_CV_total$CV, payments_CV_total$payment_total)
+```
+
+Since the p-value is less than our threshold of 0.05, we can reject the null hypothesis. Even though there is a correlation, it is very weak at around 0.11.
+
+## d (BONUS)
+
+```{r}
+paymsum <- payments %>% na.omit() %>% group_by(DATE, AP_ID) %>% summarize(dailysumtot = sum(PYMNT_AMT)) #DATE in group_by before AP_ID
+SDsummary <- paymsum %>% group_by(DATE) %>% summarize(newSd = sd(dailysumtot, na.rm = TRUE))#DATE in group_by before AP_ID
+
+newmean <- mean(paymsum$dailysumtot)
+#SDsummary <- paymsum %>% filter(n()>1) %>% summarize(mean = mean(, na.rm = TRUE))
+
+SDsummary %>% mutate(newcv = (newSd/newmean)) %>% head()
+(SDsum2 <- SDsummary %>% mutate(newcv = (newSd/newmean)) %>% mutate(rank = newcv < 0.5) %>% head())
+(newcvattr <- left_join(payments, SDsum2, by="DATE") %>% mutate(newcv = newSd/newmean) %>% head()) #by = "DATE"
+#rank = AP_ID + PYMNT_SRC + DATE + CASE_NUM + PYMNT_AMT + PRINT_TYPE
+#summary(rank, data = newcvattr) # + DATE
+```
+
